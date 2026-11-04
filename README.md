@@ -61,3 +61,5 @@ The original and second submission files remain available separately. V3 can be 
 ```sh
 python donation_model.py /path/to/for_students submission-v3.csv
 ```
+
+V3 scored 0.97676 on the public leaderboard, exceeding V1's 0.97452 and V2's 0.97445. It was selected for final scoring. Further experiments with average gift size, annual donation share, and explicit recent-donor interactions did not show a consistent validation advantage. Public leaderboard performance does not establish the private score.
