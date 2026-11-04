@@ -47,3 +47,17 @@ The second candidate improved on the original across six development and six fre
 ```sh
 python challenger.py /path/to/for_students submission-v2.csv
 ```
+
+## Third candidate and timing assumption
+
+V2 scored 0.97445 publicly. V3 adds the supplied lifetime donation amount and donation count, basic account completeness indicators, and interactions for patrons without a subscription history. Its regularized logistic model uses C=1 and averages 60 models across twelve stratified five-fold repetitions.
+
+On six additional validation splits, the initial model averaged 0.97653 and V3 averaged 0.98082. Across all twelve comparison splits, V3 averaged 0.98004. These estimates come from repeated splits of the same 6,941 labeled accounts and are development results.
+
+The recording and competition description present account.csv as donation history available for modeling, so V3 treats the supplied fields as eligible competition inputs. The exact prediction cutoff is undocumented. A sensitivity experiment masking lifetime donation fields for patrons whose first donation was recorded in 2014 removed the improvement. This makes V3 dependent on the availability of 2014 donor information. Its results do not establish performance for a forecast made before those donations occurred.
+
+The original and second submission files remain available separately. V3 can be reproduced with the following command.
+
+```sh
+python donation_model.py /path/to/for_students submission-v3.csv
+```
