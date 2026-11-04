@@ -4,20 +4,20 @@ The model estimates whether a past patron will purchase a 2014–15 season subsc
 
 ## Reproduce
 
-Extract the competition ZIP outside the repository. Pass the directory containing the nine CSV files to the script.
+Use Python 3.10. Extract the competition ZIP outside the repository. Pass the directory containing the nine CSV files to the script.
 
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-python model.py /path/to/for_students submission.csv
+OPENBLAS_NUM_THREADS=1 python donation_model.py /path/to/for_students submission-v3.csv
 ```
 
 The script validates the account keys, runs repeated cross-validation, and writes the 2,975 predictions in sample-submission order. The raw data and output CSV stay local.
 
 ## Data and modeling
 
-The labeled set has 6,941 patrons and 332 subscription buyers. The test set has 2,975 patrons. All labeled and test accounts join to the account table, and the two sets have disjoint IDs. Subscription and ticket features use seasons before 2014–15. The account features use billing and shipping geography, 2013 donation amount, and first donations dated before 2014. Lifetime donation totals and relationship codes were excluded because their snapshot timing was unclear.
+The labeled set has 6,941 patrons and 332 subscription buyers. The test set has 2,975 patrons. All labeled and test accounts join to the account table, and the two sets have disjoint IDs. Subscription and ticket features use seasons before 2014–15. The account features use billing and shipping geography, 2013 donation amount, and first donations dated before 2014. V1 and V2 excluded lifetime donation totals and relationship codes. V3 uses the supplied lifetime totals and whether a relationship entry exists.
 
 The renewal baseline ranks patrons from subscription recency, streak, frequency, and decayed purchase activity. Its largest source of lost AUROC was ranking first-time buyers among patrons with no subscription history. Ticket activity and proximity to the three main concert markets give the model information for that group. The compact logistic model also allows the effects of geography, ticket activity, and donations to differ for recent subscribers and patrons without subscription history.
 
@@ -36,7 +36,7 @@ The baseline and finalists use six repetitions of stratified five-fold cross-val
 
 The historical prior improved the compact model slightly across the six repetitions. The gain is small relative to the variation across splits. Adding neighborhood purchase density or more detailed geographic interactions reduced validation AUROC. The wider boosted-tree models also trailed the compact logistic model. The finalists were compared on reused validation folds, so these scores should be read as development estimates.
 
-The selected pipeline retains the compact model with the historical prior. Account IDs are join keys and are excluded from model features.
+V1 retains the compact model with the historical prior. Account IDs are join keys and are excluded from model features.
 
 ## Second candidate
 
@@ -56,10 +56,6 @@ On six additional validation splits, the initial model averaged 0.97653 and V3 a
 
 The recording and competition description present account.csv as donation history available for modeling, so V3 treats the supplied fields as eligible competition inputs. The exact prediction cutoff is undocumented. A sensitivity experiment masking lifetime donation fields for patrons whose first donation was recorded in 2014 removed the improvement. This makes V3 dependent on the availability of 2014 donor information. Its results do not establish performance for a forecast made before those donations occurred.
 
-The original and second submission files remain available separately. V3 can be reproduced with the following command.
-
-```sh
-python donation_model.py /path/to/for_students submission-v3.csv
-```
+The per-repeat validation scores and the submission checksum are recorded in [V3 validation results](results/v3-validation.md).
 
 V3 scored 0.97676 on the public leaderboard, exceeding V1's 0.97452 and V2's 0.97445. It was selected for final scoring. Further experiments with average gift size, annual donation share, and explicit recent-donor interactions did not show a consistent validation advantage. Public leaderboard performance does not establish the private score.
