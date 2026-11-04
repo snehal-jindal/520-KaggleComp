@@ -1,61 +1,61 @@
-# Philharmonia Baroque Orchestra subscription prediction
+# Predicting Philharmonia Baroque Orchestra subscriptions
 
-The model estimates whether a past patron will purchase a 2014–15 season subscription. The competition evaluates the ordering of predicted probabilities with AUROC.
+For the 2014–15 season, the task was to rank past patrons by how likely they were to buy a subscription. Of the 6,941 patrons in the training data, 332 bought one. The hard part was figuring out who belonged near the top of that list, especially among patrons who had never subscribed. I used AUROC, the competition metric, to judge how well each model ranked buyers ahead of nonbuyers. My final submission scored **0.97676 on Kaggle’s public leaderboard**. The biggest improvement came when I added the lifetime donation fields to the model.
 
-## Reproduce
+## Building the account data
 
-Use Python 3.10. Extract the competition ZIP outside the repository. Pass the directory containing the nine CSV files to the script.
+The submission needed one prediction per account. The raw purchase files were organized by transaction, so a patron who bought several tickets appeared several times. I summarized tickets and subscriptions separately by account before joining them to the account records. That kept the modeling table at one row per patron and preserved accounts with no purchase history. I checked that the training and test IDs were unique, that the sets had no accounts in common, and that the test IDs matched the sample submission. I used the IDs to join and order records.
+
+I wanted purchase history to capture both how often someone bought and how recently they did it. Two patrons might have subscribed three times each, but I’d expect different renewal behavior if one subscribed last season and the other stopped years ago. I kept the time since the last subscription, the number of seasons subscribed, and the current streak. I also built weighted counts for subscriptions and individual tickets. A purchase last season contributed 1. A purchase two seasons back contributed 0.55, and one three seasons back contributed about 0.30.
+
+The code uses the start year in each season label to decide which transactions are available. For the 2014–15 prediction, ticket and subscription records end with the preceding season. Missing transaction summaries start at `-1`. That makes it possible to handle an account with no recorded subscription separately from an account whose last subscription was a long time ago.
+
+| Data source | What it contributed |
+| --- | --- |
+| Subscription records | Time since the last subscription, number of seasons, current streak, and weighted purchase activity |
+| Individual ticket records | Whether a patron had bought a ticket, whether they bought one last season, and weighted ticket activity |
+| Account records | Donation history and indicators for incomplete account details |
+| ZIP reference file | Approximate distance from the billing ZIP to San Francisco, the East Bay, and the Peninsula |
+
+I converted donation amounts to numbers and extracted five-digit ZIP codes where possible. I matched billing ZIPs to coordinates and capped the distance estimates at 300 km. Accounts without usable coordinates received the capped value. A separate indicator recorded whether the billing ZIP itself was missing.
+
+## What changed between models
+
+I started with a baseline built from subscription history. It averaged about **0.950 AUROC** over the first three validation runs. The score was a starting point, but the ranking errors told me where to spend my time. The biggest group of errors came from comparisons between two patrons who had never subscribed. One eventually bought a subscription, but the baseline had almost the same information about both.
+
+That was my reason for adding individual ticket history, geography, and donations. A patron who bought concert tickets last season has shown some interest even if they have no subscription record. I let the effect of features like ticket activity differ for recent subscribers and patrons who had never subscribed. A ticket can tell me something different about those two groups.
+
+I also used earlier seasons to build a historical purchase score. For each season from 2011–12 through 2013–14, I started with accounts that already had a recorded ticket or subscription purchase. I built their features from transactions before that season and used subscription purchases during the season as the outcome. I fitted a CatBoost model with depth 4, 350 iterations, and a learning rate of 0.035. More recent seasons got more weight because they were closer to 2014–15. The resulting score went into the final logistic regression as a feature. The historical model learned from earlier-season outcomes only.
+
+V1 combined that historical score with a compact set of patron features. In V2, I blended in predictions from separate models for recent and lapsed subscribers. That helped a little locally, but the public score went from **0.97452 to 0.97445**. The two submissions were almost tied. I went back to the group that had caused the most trouble for the baseline and looked for more information about people who had never subscribed.
+
+V3 added lifetime donation amount and count, plus a few account indicators, including whether the billing city was missing. I used `log(1 + x)` on both lifetime donation fields to compress their range. I also let the new features have different effects for patrons with no subscription history. The final estimator was L2-regularized logistic regression with `C=1` and a maximum of 2,000 iterations. With only 332 buyers, I wanted the model to pick up those specific differences without giving too much weight to a handful of unusual accounts. I tried more detailed donation features and boosted trees, but the validation results did not consistently improve on V3.
+
+I treated the lifetime donation totals in the supplied account file as history available for the competition. The exact cutoff is undocumented, so I checked how much the result depended on it. When I masked the lifetime fields for patrons whose first donation was recorded in 2014, the validation gain disappeared. For a forecast made as of a specific date, I’d verify when those donations were recorded before using the totals.
+
+## Validation and final submission
+
+I split the labeled accounts into five folds with about the same proportion of buyers in each. For each fold, I fitted the scaler and logistic regression on four-fifths of the accounts and predicted the remaining fifth. Once all five folds had been scored, I pooled those held-out predictions and calculated one AUROC. I used the same folds for the models I was comparing so the difference wouldn’t come from one model getting an easier split.
+
+V3 averaged **0.98004 AUROC** across 12 runs. In the six additional runs, it averaged **0.98082** against **0.97653** for V1 on the same folds. Those repetitions reuse the 6,941 labeled accounts. I used them to see whether the comparison held when I changed the fold assignments.
+
+| Submission | Main change | Kaggle public AUROC |
+| --- | --- | ---: |
+| V1 | Compact account features and a historical purchase score | 0.97452 |
+| V2 | Separate models for recent and lapsed subscribers | 0.97445 |
+| **V3** | **Lifetime donation history and account indicators** | **0.97676** |
+
+I picked V3 because it improved the local comparison and had the highest public score. Each of the 60 V3 fits also predicted the test accounts. I averaged those probabilities for each account and wrote them in sample-submission order. The final file contained 2,975 unique account IDs with one probability between 0 and 1 for each.
+
+## Reproducing V3
+
+Extract the competition data locally and run these commands from the repository with Python 3.10.
 
 ```sh
-python3 -m venv .venv
+python -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
 OPENBLAS_NUM_THREADS=1 python donation_model.py /path/to/for_students submission-v3.csv
 ```
 
-The script validates the account keys, runs repeated cross-validation, and writes the 2,975 predictions in sample-submission order. The raw data and output CSV stay local.
-
-## Data and modeling
-
-The labeled set has 6,941 patrons and 332 subscription buyers. The test set has 2,975 patrons. All labeled and test accounts join to the account table, and the two sets have disjoint IDs. Subscription and ticket features use seasons before 2014–15. The account features use billing and shipping geography, 2013 donation amount, and first donations dated before 2014. V1 and V2 excluded lifetime donation totals and relationship codes. V3 uses the supplied lifetime totals and whether a relationship entry exists.
-
-The renewal baseline ranks patrons from subscription recency, streak, frequency, and decayed purchase activity. Its largest source of lost AUROC was ranking first-time buyers among patrons with no subscription history. Ticket activity and proximity to the three main concert markets give the model information for that group. The compact logistic model also allows the effects of geography, ticket activity, and donations to differ for recent subscribers and patrons without subscription history.
-
-The historical prior comes from a shallow CatBoost model trained to predict purchases in the 2011–12 through 2013–14 seasons. For each season, the training population consists of patrons with an earlier ticket or subscription record. Features use records before the season being predicted. More recent historical seasons carry more weight. This prior summarizes purchase patterns from earlier seasons for the logistic model. Earlier seasons do not provide a comparable independent evaluation population for 2014–15, so the reported validation uses the actual 2014–15 training labels.
-
-## Validation and selection
-
-The baseline and finalists use six repetitions of stratified five-fold cross-validation. Each account receives one held-out prediction per repetition. Standardization and logistic regression are fitted inside each fold. The historical prior uses earlier transaction records and never uses 2014–15 labels. Test probabilities average the 30 fitted finalist models.
-
-| Candidate | Mean local AUROC |
-| --- | ---: |
-| Renewal-history baseline, first three repetitions | 0.9500 |
-| Boosted trees on subscription and ticket data, first three repetitions | 0.9624 |
-| Compact logistic model | 0.9771 |
-| Compact logistic model with historical prior | 0.9773 |
-
-The historical prior improved the compact model slightly across the six repetitions. The gain is small relative to the variation across splits. Adding neighborhood purchase density or more detailed geographic interactions reduced validation AUROC. The wider boosted-tree models also trailed the compact logistic model. The finalists were compared on reused validation folds, so these scores should be read as development estimates.
-
-V1 retains the compact model with the historical prior. Account IDs are join keys and are excluded from model features.
-
-## Second candidate
-
-The initial submission scored 0.97452 on Kaggle's public split. The second candidate keeps the original model and blends in two separate logistic models for recent and lapsed subscribers. The recent-subscriber model uses the previous season's package, venue, seating, and tier. The lapsed-subscriber model uses recency, earlier purchasing, ticket activity, and geography. A small score adjustment downweights patrons with neither a recent subscription nor a billing location within 100 km of the main concert markets. This includes patrons whose billing location could not be resolved.
-
-The second candidate improved on the original across six development and six fresh cross-validation repetitions. On the fresh splits, mean AUROC was 0.97582 versus 0.97518. The estimated paired improvement was small. The extra ZIP demographics, neighborhood demand estimates, and direct pairwise optimization did not improve validation and were excluded.
-
-```sh
-python challenger.py /path/to/for_students submission-v2.csv
-```
-
-## Third candidate and timing assumption
-
-V2 scored 0.97445 publicly. V3 adds the supplied lifetime donation amount and donation count, basic account completeness indicators, and interactions for patrons without a subscription history. Its regularized logistic model uses C=1 and averages 60 models across twelve stratified five-fold repetitions.
-
-On six additional validation splits, the initial model averaged 0.97653 and V3 averaged 0.98082. Across all twelve comparison splits, V3 averaged 0.98004. These estimates come from repeated splits of the same 6,941 labeled accounts and are development results.
-
-The recording and competition description present account.csv as donation history available for modeling, so V3 treats the supplied fields as eligible competition inputs. The exact prediction cutoff is undocumented. A sensitivity experiment masking lifetime donation fields for patrons whose first donation was recorded in 2014 removed the improvement. This makes V3 dependent on the availability of 2014 donor information. Its results do not establish performance for a forecast made before those donations occurred.
-
-The per-repeat validation scores and the submission checksum are recorded in [V3 validation results](results/v3-validation.md).
-
-V3 scored 0.97676 on the public leaderboard, exceeding V1's 0.97452 and V2's 0.97445. It was selected for final scoring. Further experiments with average gift size, annual donation share, and explicit recent-donor interactions did not show a consistent validation advantage. Public leaderboard performance does not establish the private score.
+The per-run scores and the checksum for the submission are in [V3 validation results](results/v3-validation.md).
