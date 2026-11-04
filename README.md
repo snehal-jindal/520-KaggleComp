@@ -37,3 +37,13 @@ The baseline and finalists use six repetitions of stratified five-fold cross-val
 The historical prior improved the compact model slightly across the six repetitions. The gain is small relative to the variation across splits. Adding neighborhood purchase density or more detailed geographic interactions reduced validation AUROC. The wider boosted-tree models also trailed the compact logistic model. The finalists were compared on reused validation folds, so these scores should be read as development estimates.
 
 The selected pipeline retains the compact model with the historical prior. Account IDs are join keys and are excluded from model features.
+
+## Second candidate
+
+The initial submission scored 0.97452 on Kaggle's public split. The second candidate keeps the original model and blends in two separate logistic models for recent and lapsed subscribers. The recent-subscriber model uses the previous season's package, venue, seating, and tier. The lapsed-subscriber model uses recency, earlier purchasing, ticket activity, and geography. A small score adjustment downweights patrons with neither a recent subscription nor a billing location within 100 km of the main concert markets. This includes patrons whose billing location could not be resolved.
+
+The second candidate improved on the original across six development and six fresh cross-validation repetitions. On the fresh splits, mean AUROC was 0.97582 versus 0.97518. The estimated paired improvement was small. The extra ZIP demographics, neighborhood demand estimates, and direct pairwise optimization did not improve validation and were excluded.
+
+```sh
+python challenger.py /path/to/for_students submission-v2.csv
+```
